@@ -37,9 +37,36 @@ def Skipgram(centerWord, contextWord, inputMatrix, outputMatrix):
 # grad_out : Gradient of outputMatrix (type:torch.tesnor(V,D))          #
 #########################################################################
 
-    loss = None
-    grad_emb = None
-    grad_out = None
+###############################  forward path  ################################
+
+    x = torch.zeros(1, (len(inputMatrix))) # make center-word one-hot vector
+    x[0][centerWord] = 1
+    v = torch.mm(x,inputMatrix) # x dot product inputMatrix
+    z = torch.mm(outputMatrix, v.t()) # v dot product outputMatrix
+
+    #softmax
+    e = torch.exp(z)
+    softmax = e /torch.sum(e, dim=0, keepdim=True)
+
+    print(contextWord)
+    print(softmax[contextWord][0])
+
+    # loss
+    negative = -torch.log(softmax) # softmax 적용
+    loss = negative[contextWord][0] # 정답 label만 출력.
+
+###############################################################################
+
+###############################  backward path  ################################
+    softmax_clone = torch.clone(softmax)
+    softmax_clone[contextWord][0] = softmax[contextWord][0] - 1 # dL/dy * dy/dz
+    e_loss = softmax_clone # e_loss = dL/dy * dy/dz
+    dv = torch.mm(e_loss.t(), outputMatrix) # dL/dz = (dL/dy * dy/dz) * dz/dv
+    doutputMatrix = torch.mm(e_loss, v) # dL/doutputMatrix = (dL/dy * dy/dz) * dz/doutputMatrix
+
+    grad_out = doutputMatrix # gradient of outputMatrix
+    grad_emb = dv # gradient of inputMatrix
+###############################################################################
 
     return loss, grad_emb, grad_out
 
@@ -59,33 +86,41 @@ def CBOW(centerWord, contextWords, inputMatrix, outputMatrix):
 
 ###############################  forward path  ################################
 
-    v_sum = torch.empty((1,64)) #sum of v
+    v_sum = torch.zeros((1,64)) # sum of v
+    x_sum = torch.zeros((1, len(inputMatrix))) # sum of x
 
     for index in contextWords: # index of contextWords
         x = torch.zeros(1, (len(inputMatrix))) # each x
         x[0][index] = 1 # one-hot vector
+        x_sum += x
         v = torch.mm(x,inputMatrix) # x dot product inputMatrix
         v_sum += v # add all v
 
+    # print(v_sum)
     v_sum = v_sum / len(contextWords) # divide by num of x
     z = torch.mm(outputMatrix, v_sum.t()) # v_sum dot product outputMatrix
-    print(z)
-    e = torch.exp(z)
-    print(e)
+
     #softmax
-    #print("*********************z*********************")
-    # print("*******************************************\n")
-    # print("*********************e*********************")
-    # e = torch.exp(z)
-    # print(e)
-    # print("*******************************************")
-    # softmax = e /torch.sum(e, dim=1, keepdim=True)
+    e = torch.exp(z)
+    softmax = e /torch.sum(e, dim=0, keepdim=True)
     # print(softmax)
+
+    # loss
+    negative = -torch.log(softmax) # softmax 적용
+    loss = negative[centerWord][0] # 정답 label만 출력.
 ###############################################################################
 
-    loss = None
-    grad_emb = None
-    grad_out = None
+###############################  backward path  ################################
+    softmax_clone = torch.clone(softmax)
+    softmax_clone[centerWord][0] = softmax[centerWord][0] - 1 # dL/dy * dy/dz
+    e_loss = softmax_clone # e_loss = dL/dy * dy/dz
+    dv_sum = torch.mm(e_loss.t(), outputMatrix) # dL/dv_sum = (dL/dy * dy/dz) * dz/dv_sum
+    doutputMatrix = torch.mm(e_loss, v_sum) # dL/doutputMatrix = (dL/dy * dy/dz) * dz/doutputMatrix
+    # dinputMatrix = torch.mm((x_sum / len(contextWords)).t(), dv_sum) # dL/dinputMatrix = (dL/dy * dy/dz) * dz/dv_sum * dv_sum/dinputMatrix
+
+    grad_out = doutputMatrix # gradient of outputMatrix
+    grad_emb = dv_sum # gradient of inputMatrix
+###############################################################################
 
     return loss, grad_emb, grad_out
 
