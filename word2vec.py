@@ -44,20 +44,23 @@ def Skipgram(centerWord, contextWord, inputMatrix, outputMatrix):
     v = torch.mm(x,inputMatrix) # x dot product inputMatrix
     z = torch.mm(outputMatrix, v.t()) # v dot product outputMatrix
 
+    # print(z)
+
     #softmax
     e = torch.exp(z)
     softmax = e /torch.sum(e, dim=0, keepdim=True)
 
-    print(contextWord)
-    print(softmax[contextWord][0])
+    # print(softmax)
 
     # loss
     negative = -torch.log(softmax) # softmax 적용
     loss = negative[contextWord][0] # 정답 label만 출력.
+    # print(loss)
 
 ###############################################################################
 
 ###############################  backward path  ################################
+
     softmax_clone = torch.clone(softmax)
     softmax_clone[contextWord][0] = softmax[contextWord][0] - 1 # dL/dy * dy/dz
     e_loss = softmax_clone # e_loss = dL/dy * dy/dz
@@ -66,9 +69,10 @@ def Skipgram(centerWord, contextWord, inputMatrix, outputMatrix):
 
     grad_out = doutputMatrix # gradient of outputMatrix
     grad_emb = dv # gradient of inputMatrix
-###############################################################################
+
 
     return loss, grad_emb, grad_out
+
 
 def CBOW(centerWord, contextWords, inputMatrix, outputMatrix):
 ################################  Input  ################################
@@ -150,7 +154,7 @@ def word2vec_trainer(corpus, word2ind, mode="CBOW", dimension=100, learning_rate
             for contextInd in contextInds:
                 L, G_emb, G_out = Skipgram(centerInd, contextInd, W_emb, W_out)
                 W_emb[centerInd] -= learning_rate*G_emb.squeeze()
-                W_out -= learning_rate*G_emb
+                W_out -= learning_rate*G_out
                 losses.append(L.item())
 
         else:
