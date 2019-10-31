@@ -7,15 +7,13 @@ import argparse
 
 def getRandomContext(corpus, C=5):
     wordID = random.randint(0, len(corpus) - 1)
-
+    
     context = corpus[max(0, wordID - C):wordID]
     if wordID+1 < len(corpus):
         context += corpus[wordID+1:min(len(corpus), wordID + C + 1)]
 
     centerword = corpus[wordID]
-
     context = [w for w in context if w != centerword]
-
 
     if len(context) > 0:
         return centerword, context
@@ -39,12 +37,12 @@ def Skipgram(centerWord, contextWord, inputMatrix, outputMatrix):
 
 ###############################  forward path  ################################
 
-    x = torch.zeros(1, (len(inputMatrix))) # make center-word one-hot vector
-    x[0][centerWord] = 1
-    v = torch.mm(x,inputMatrix) # x dot product inputMatrix
-    z = torch.mm(outputMatrix, v.t()) # v dot product outputMatrix
+    # x = torch.zeros(1, (len(inputMatrix))) # make center-word one-hot vector
+    # x[0][centerWord] = 1
+    # v = torch.mm(x,inputMatrix) # x dot product inputMatrix
 
-    # print(z)
+    center = inputMatrix[centerWord]
+    z = torch.squeeze(torch.mm(outputMatrix, torch.unsqueeze(center,1))) # v dot product outputMatrix
 
     #softmax
     e = torch.exp(z)
@@ -54,7 +52,7 @@ def Skipgram(centerWord, contextWord, inputMatrix, outputMatrix):
 
     # loss
     negative = -torch.log(softmax) # softmax 적용
-    loss = negative[contextWord][0] # 정답 label만 출력.
+    loss = negative[contextWord]# 정답 label만 출력.
     # print(loss)
 
 ###############################################################################
@@ -62,17 +60,16 @@ def Skipgram(centerWord, contextWord, inputMatrix, outputMatrix):
 ###############################  backward path  ################################
 
     softmax_clone = torch.clone(softmax)
-    softmax_clone[contextWord][0] = softmax[contextWord][0] - 1 # dL/dy * dy/dz
+    softmax_clone[contextWord] = softmax[contextWord] - 1 # dL/dy * dy/dz
     e_loss = softmax_clone # e_loss = dL/dy * dy/dz
-    dv = torch.mm(e_loss.t(), outputMatrix) # dL/dz = (dL/dy * dy/dz) * dz/dv
-    doutputMatrix = torch.mm(e_loss, v) # dL/doutputMatrix = (dL/dy * dy/dz) * dz/doutputMatrix
+    dv = torch.mm(torch.unsqueeze(e_loss, 0), outputMatrix) # dL/dz = (dL/dy * dy/dz) * dz/dv
+
+    doutputMatrix = torch.mm(torch.unsqueeze(e_loss,1), torch.unsqueeze(center, 0)) # dL/doutputMatrix = (dL/dy * dy/dz) * dz/doutputMatrix
 
     grad_out = doutputMatrix # gradient of outputMatrix
     grad_emb = dv # gradient of inputMatrix
 
-
     return loss, grad_emb, grad_out
-
 
 def CBOW(centerWord, contextWords, inputMatrix, outputMatrix):
 ################################  Input  ################################
@@ -90,36 +87,41 @@ def CBOW(centerWord, contextWords, inputMatrix, outputMatrix):
 
 ###############################  forward path  ################################
 
-    v_sum = torch.zeros((1,64)) # sum of v
-    x_sum = torch.zeros((1, len(inputMatrix))) # sum of x
+    # v_sum = torch.zeros((1,64)) # sum of v
+    # x_sum = torch.zeros((1, len(inputMatrix))) # sum of x
+    #
+    # for index in contextWords: # index of contextWords
+    #     x = torch.zeros(1, (len(inputMatrix))) # each x
+    #     x[0][index] = 1 # one-hot vector
+    #     x_sum += x
+    #     v = torch.mm(x,inputMatrix) # x dot product inputMatrix
+    #     v_sum += v # add all v
 
-    for index in contextWords: # index of contextWords
-        x = torch.zeros(1, (len(inputMatrix))) # each x
-        x[0][index] = 1 # one-hot vector
-        x_sum += x
-        v = torch.mm(x,inputMatrix) # x dot product inputMatrix
-        v_sum += v # add all v
+    D = inputMatrix.size(1)
 
-    # print(v_sum)
-    v_sum = v_sum / len(contextWords) # divide by num of x
-    z = torch.mm(outputMatrix, v_sum.t()) # v_sum dot product outputMatrix
+    v_sum = torch.zeros(D)
+    for word in contextWords:
+        v_sum += inputMatrix[word]
+
+    # v_sum =torch.unsqueeze(v_sum,1)
+    # z = torch.mm(outputMatrix, v_sum.t()) # v_sum dot product outputMatrix
+    z = torch.squeeze(torch.mm(outputMatrix, torch.unsqueeze(v_sum,1)))
 
     #softmax
     e = torch.exp(z)
     softmax = e /torch.sum(e, dim=0, keepdim=True)
-    # print(softmax)
 
     # loss
     negative = -torch.log(softmax) # softmax 적용
-    loss = negative[centerWord][0] # 정답 label만 출력.
+    loss = negative[centerWord] # 정답 label만 출력.
 ###############################################################################
 
 ###############################  backward path  ################################
     softmax_clone = torch.clone(softmax)
-    softmax_clone[centerWord][0] = softmax[centerWord][0] - 1 # dL/dy * dy/dz
+    softmax_clone[centerWord] = softmax[centerWord] - 1 # dL/dy * dy/dz
     e_loss = softmax_clone # e_loss = dL/dy * dy/dz
-    dv_sum = torch.mm(e_loss.t(), outputMatrix) # dL/dv_sum = (dL/dy * dy/dz) * dz/dv_sum
-    doutputMatrix = torch.mm(e_loss, v_sum) # dL/doutputMatrix = (dL/dy * dy/dz) * dz/doutputMatrix
+    dv_sum = torch.mm(torch.unsqueeze(e_loss, 0), outputMatrix) # dL/dv_sum = (dL/dy * dy/dz) * dz/dv_sum
+    doutputMatrix = torch.mm(torch.unsqueeze(e_loss, 1),torch.unsqueeze(v_sum, 0))  # dL/doutputMatrix = (dL/dy * dy/dz) * dz/doutputMatrix
     # dinputMatrix = torch.mm((x_sum / len(contextWords)).t(), dv_sum) # dL/dinputMatrix = (dL/dy * dy/dz) * dz/dv_sum * dv_sum/dinputMatrix
 
     grad_out = doutputMatrix # gradient of outputMatrix
@@ -127,22 +129,47 @@ def CBOW(centerWord, contextWords, inputMatrix, outputMatrix):
 ###############################################################################
 
     return loss, grad_emb, grad_out
+    # D = inputMatrix.size(1)
+    #
+    # projection = torch.zeros(D)
+    # for word in contextWords:
+    #     projection += inputMatrix[word]
+    #
+    # scores = torch.squeeze(
+    #     torch.mm(outputMatrix, torch.unsqueeze(projection, 1))
+    # )
+    #
+    # e = torch.exp(scores)
+    # softmax = e / torch.sum(e)
+    # log_softmax = torch.log(softmax)
+    #
+    # loss = -log_softmax[centerWord]
+    #
+    # grad_scores = softmax
+    # grad_scores[centerWord] -= 1
+    #
+    # grad_out = torch.mm(torch.unsqueeze(grad_scores, 1), torch.unsqueeze(projection, 0))
+    # grad_projection = torch.mm(torch.unsqueeze(grad_scores, 0), outputMatrix)
+    #
+    # grad_in = grad_projection
+    #
+    # return loss, grad_in, grad_out
 
 
-def word2vec_trainer(corpus, word2ind, mode="CBOW", dimension=100, learning_rate=0.025, iteration=50000):
+def word2vec_trainer(corpus, word2ind, mode="CBOW", dimension=100, learning_rate=0.025, iteration=1000000):
 
 # Xavier initialization of weight matrices
     W_emb = torch.randn(len(word2ind), dimension) / (dimension**0.5)
     W_out = torch.randn(len(word2ind), dimension) / (dimension**0.5)
-    window_size = 5
+    window_size = 2
 
-
+    
     losses=[]
     for i in range(iteration):
         #Training word2vec using SGD
         centerword, context = getRandomContext(corpus, window_size)
         centerInd = word2ind[centerword]
-        contextInds =[word2ind[word] for word in context]
+        contextInds = [word2ind[word] for word in context]
 
         if mode=="CBOW":
             L, G_emb, G_out = CBOW(centerInd, contextInds, W_emb, W_out)
@@ -232,7 +259,7 @@ def main():
     print()
 
     #Training section
-    emb,_ = word2vec_trainer(processed, word2ind, mode=mode, dimension=64, learning_rate=0.05, iteration=50000)
+    emb,_ = word2vec_trainer(processed, word2ind, mode=mode, dimension=64, learning_rate=0.05, iteration=1000000)
     
     #Print similar words
     testwords = ["one", "are", "he", "have", "many", "first", "all", "world", "people", "after"]
